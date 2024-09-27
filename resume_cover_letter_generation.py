@@ -3,7 +3,7 @@ import base64
 import urllib.parse
 
 def generate_resume_and_cover_letter(resume_text, job_description, api_key):
-    openai.api_key = api_key
+    client = openai.OpenAI(api_key=api_key)
 
     try:
         # Generate resume
@@ -19,8 +19,8 @@ def generate_resume_and_cover_letter(resume_text, job_description, api_key):
         Generate a LaTeX resume that highlights relevant skills and experiences for this job.
         """
 
-        resume_response = openai.ChatCompletion.create(
-            model="gpt-4o",
+        resume_response = client.chat.completions.create(
+            model="gpt-4",
             messages=[{"role": "user", "content": resume_prompt}],
             max_tokens=1000
         )
@@ -39,8 +39,8 @@ def generate_resume_and_cover_letter(resume_text, job_description, api_key):
         Generate a LaTeX cover letter that expresses interest in the position and highlights relevant qualifications.
         """
 
-        cover_letter_response = openai.ChatCompletion.create(
-            model="gpt-4o",
+        cover_letter_response = client.chat.completions.create(
+            model="gpt-4",
             messages=[{"role": "user", "content": cover_letter_prompt}],
             max_tokens=1000
         )

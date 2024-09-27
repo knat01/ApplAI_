@@ -2,12 +2,14 @@
 
 import os
 import openai
-from scrapegraphai.graphs import SmartScraperGraph
-import streamlit as st
+import requests
 import json
+import streamlit as st
+from typing import List, Dict
+import re
 
 
-def get_job_link_from_resume(resume_text):
+def get_job_link_from_resume(resume_text: str) -> str:
     """
     Generate a job search URL based on the user's resume using OpenAI's Chat API.
 
@@ -41,9 +43,11 @@ def get_job_link_from_resume(resume_text):
         return None
 
 
-def scrape_job_listings(job_search_url):
+
+
+def scrape_job_listings(job_search_url: str) -> List[Dict]:
     """
-    Scrape job listings from the Canada Job Bank using ScrapeGraph-AI.
+    Scrape job listings from the Canada Job Bank using Jina AI's Reader API.
 
     Args:
         job_search_url (str): The URL to scrape job listings from.
@@ -51,16 +55,16 @@ def scrape_job_listings(job_search_url):
     Returns:
         list: A list of dictionaries containing job postings.
     """
-    graph_config = {
-        "llm": {
-            "api_key": st.session_state['api_key'],
-            "model": "openai/gpt-3.5-turbo",
-        },
-        "verbose": True,
-        "headless": True,
-    }
+    jina_url = f"https://r.jina.ai/{job_search_url}"
 
-    prompt = """Extract the first 25 job postings from the Canada Job Bank with the following details for each:
+    try:
+        response = requests.get(jina_url)
+        response.raise_for_status()
+        content = response.text
+
+        # Use OpenAI to extract job listings from the content
+        client = openai.Client(api_key=st.session_state['api_key'])
+        prompt = """Extract ALL job postings from the provided content with the following details for each:
         - Job Title
         - Company Name
         - Job URL (direct link to the job posting)
@@ -69,38 +73,45 @@ def scrape_job_listings(job_search_url):
         - Posting Date (if available)
         Return the results in a JSON format with a list of job postings."""
 
-    try:
-        # Set the OpenAI API key in the environment variable for ScrapeGraph-AI
-        os.environ["OPENAI_API_KEY"] = st.session_state['api_key']
+        completion = client.chat.completions.create(model='gpt-3.5-turbo',
+                                                    messages=[{
+                                                        "role": "system",
+                                                        "content": prompt
+                                                    }, {
+                                                        "role":
+                                                        "user",
+                                                        "content":
+                                                        content
+                                                    }],
+                                                    temperature=0.7)
 
-        scraper = SmartScraperGraph(
-            prompt=prompt,
-            source=job_search_url,
-            config=graph_config,
-        )
+        # Access the content correctly from the completion object
+        response_content = completion.choices[0].message.content
 
-        result = scraper.run()
+        # Remove code block markers and any leading/trailing whitespace
+        json_content = re.sub(r'^```json\s*|\s*```$', '',
+                              response_content.strip())
 
-        if isinstance(result, str):
-            result = json.loads(result)
-
-        if not isinstance(result, dict):
-            print(f"Unexpected result type: {type(result)}")
-            return []
-
-        job_postings = result.get('job_postings', [])[:25]
+        result = json.loads(json_content)
+        if isinstance(result, list):
+            job_postings = result
+        else:
+            job_postings = result.get('job_postings', [])
         print(f"Scraped {len(job_postings)} job postings.")
         return job_postings
 
+    except requests.RequestException as e:
+        print(f"Error fetching content from Jina AI: {e}")
     except json.JSONDecodeError as e:
         print(f"Error decoding JSON: {e}")
+        print(f"Problematic content: {json_content}")
     except Exception as e:
         print(f"Error scraping job listings: {e}")
 
     return []
 
 
-def scrape_jobs(resume_text):
+def scrape_jobs(resume_text: str) -> List[Dict]:
     """
     Main function to scrape jobs based on the user's resume.
 
