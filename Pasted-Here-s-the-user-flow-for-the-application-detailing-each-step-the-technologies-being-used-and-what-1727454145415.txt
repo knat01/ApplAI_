@@ -1,0 +1,113 @@
+Here’s the user flow for the application, detailing each step, the technologies being used, and what happens behind the scenes at each point.
+
+Step 1 User Enters OpenAI API Key
+User Action
+The user opens the Streamlit application and is prompted to input their OpenAI API key.
+What Happens
+The key is stored securely in the Streamlit session to be used later for generating resumes and cover letters.
+Technologies
+Streamlit Handles the form where the user inputs their OpenAI key.
+OpenAI API The key is later used for generating resume and cover letter content.
+Step 2 User Uploads Resume (PDF)
+User Action
+The user uploads their existing resume in PDF format.
+What Happens
+The application extracts text from the resume using PyPDF2, which is then stored in memory for use in job scraping and resume generation.
+Technologies
+Streamlit Provides the file upload interface.
+PyPDF2 Extracts text from the uploaded PDF for later processing.
+Step 3 User Fills Out Job Application Form
+User Action
+The user fills out a form with details like desired job title, location, salary expectations, and availability.
+What Happens
+The form input is saved in memory or a backend (e.g., Firebase if used) to tailor job searches and document generation.
+Technologies
+Streamlit Provides the form interface and handles saving user inputs.
+Firebase (optional) Can store the user's job preferences and details.
+Step 4 Job Scraping Based on Resume
+User Action
+After uploading their resume and filling out the form, the user clicks a button to start scraping job listings based on the data provided.
+What Happens
+The application uses ScrapeGraph-AI to search job boards (like LinkedIn, Indeed) for relevant jobs based on keywords from the user's resume and form inputs.
+The results are displayed to the user in a table or list format.
+Technologies
+ScrapeGraph-AI Scrapes job listings from online job boards using the resume's content and user preferences.
+Streamlit Displays the job listings in a table or list format, allowing the user to filter, sort, or search through them.
+Step 5 Job List Display
+User Action
+The user views the scraped job listings and selects a job they want to apply for.
+What Happens
+The user can view job details (job title, company, location, description) and select a job for resume or cover letter generation.
+Technologies
+Streamlit Handles the display of job listings in a user-friendly format (e.g., table or list view).
+Step 6 Generate Tailored Resume and Cover Letter
+User Action
+After selecting a job, the user clicks a button to generate a resume or cover letter tailored to that specific job.
+What Happens
+The OpenAI GPT-4 API is called, using the job description and the user's resume to generate a customized resume or cover letter.
+The generated text is formatted into a professional PDF using LaTeX, and the user can download the documents.
+Technologies
+OpenAI GPT-4 API Generates the resume and cover letter based on the selected job's details and the user's resume.
+LaTeX Formats the generated content into professional PDFs.
+Streamlit Handles the user interaction for document generation and provides the download link for the resumecover letter.
+Step 7 Browser Extension Assists with Job Application
+User Action
+The user navigates to a job application page (e.g., LinkedIn or Indeed), and the browser extension detects this.
+The user opens the browser extension to assist with applying for the job.
+What Happens
+The browser extension sends a request to the Streamlit backend to retrieve the user's tailored resume, cover letter, and job application data (from Step 3).
+The extension automatically fills out the job application form on the website using the retrieved data.
+Technologies
+Browser Extension (JavaScriptTypeScript) Detects the job application page, fetches data from the Streamlit backend, and fills out the form.
+Streamlit API (Backend) Serves the tailored resume, cover letter, and job application details to the browser extension.
+Step 8 User Applies for Job (Manual Submission)
+User Action
+The user reviews the auto-filled job application and clicks the Submit button to apply for the job manually.
+What Happens
+The application process is completed manually by the user, with the browser extension having filled in all the necessary details.
+Technologies
+Browser Extension Automatically fills in the job application form, but the final submission is handled manually by the user.
+Technologies Recap by Step
+OpenAI Key Input
+
+Streamlit for the input form.
+OpenAI API for later use.
+Resume Upload
+
+Streamlit for file upload.
+PyPDF2 for resume text extraction.
+Application Form
+
+Streamlit for the form interface.
+Job Scraping
+
+ScrapeGraph-AI for scraping job listings.
+Streamlit for displaying the jobs.
+Job List Display
+
+Streamlit for UI.
+Resume and Cover Letter Generation
+
+OpenAI GPT-4 API for content generation.
+LaTeX for PDF formatting.
+Streamlit for user interaction and download links.
+Browser Extension Integration
+
+Browser Extension (JavaScriptTypeScript) for autofill functionality.
+Streamlit API to provide the necessary data to the browser extension.
+Manual Job Application
+
+Browser Extension for auto-filling the form.
+User manually submits the form.
+
+
+
+
+
+ok so based on this plan I want there to be 5 files for the application. 
+1. Firebase Auth file. This file will handle all operations with firebase. It will handle saving all the information of the user temporarily. The user resume and the form that the user fills will be stored in firebase for use later in the application by the browser extension file.
+2. Main Page file. This file will have the streamlit components for the user to log in, enter their openai api key and upload their resume. This page will also have the form that the user needs to fill for the commonly asked questions asked when applying to jobs this information will help us make the links for the scraper to scrape jobs from.
+3. Resume processing and storage file. This file will work to process the resume information and present it to any function in the application that needs this data
+4. Resume and cover letter generation file. This file will be completely in charge of generation of cover letter and resume files using openai api. Make sure you use the code that I provide exactly as it is for the funcitonality to be as I intend it to be. Go through the code file I will be providing you at the end of this prompt and make sure you get all the code that is used to generate cover letters and resumes and add it to this file so that this file can be used for cover letter and resume generation
+5. Job scraper file. This file will get the data from the resume processing and storage file and use that data to generate first links of the pages that need to be scraped and then scrape those pages and return the data that is needed for the list of jobs and their details and provide it to the main page for the user to see.
+6. Job applier file. THis will be the file in charge of the browser extension and making sure that all the information that is stored for the user will be used to fill the form out when the user goes to the page to apply to the job. It will fill out  the job application form based on the form that the user had filled previously. 

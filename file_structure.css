@@ -1,0 +1,13 @@
+app/
+├── firebase_auth.py
+├── main.py
+├── resume_processing.py
+├── resume_cover_letter_generation.py
+└── job_scraper.py
+templates/
+├── latex_resume_format_start.tex
+├── latex_resume_format_end.tex
+├── latex_cover_letter_format_start.tex
+└── latex_cover_letter_format_end.tex
+extension/
+└── (Browser extension files)
