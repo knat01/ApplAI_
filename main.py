@@ -4,8 +4,6 @@ import resume_processing
 import job_scraper
 import resume_cover_letter_generation
 import os
-from flask import Flask, jsonify
-from threading import Thread
 
 # Initialize session state
 if 'user' not in st.session_state:
@@ -16,23 +14,6 @@ if 'resume_text' not in st.session_state:
     st.session_state['resume_text'] = None
 if 'job_listings' not in st.session_state:
     st.session_state['job_listings'] = []
-
-# Initialize Flask app for API
-flask_app = Flask(__name__)
-
-@flask_app.route('/api/user_data', methods=['GET'])
-def get_user_data():
-    if st.session_state['user']:
-        user_data = firebase_auth.get_user_data(st.session_state['user'].uid)
-        return jsonify(user_data)
-    return jsonify({'error': 'User not authenticated'}), 401
-
-def run_flask():
-    flask_app.run(port=5001)
-
-# Start Flask app in a separate thread
-flask_thread = Thread(target=run_flask)
-flask_thread.start()
 
 st.title("Job Application AI Assistant")
 
