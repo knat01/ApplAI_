@@ -9,6 +9,9 @@ import os
 import urllib.parse
 import base64
 import logging
+import webbrowser
+from io import BytesIO
+import zipfile
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -188,19 +191,25 @@ if st.session_state['user']:
                                 template_start_path=resume_start_template,
                                 template_end_path=resume_end_template,
                                 assistant_id=st.session_state['latex_resume_assistant_id'],
-                                api_key=st.session_state['api_key']
-                            )
+                                api_key=st.session_state['api_key'])
 
-                            if 'pdf_path' in result:
-                                pdf_path = result['pdf_path']
-                                # Read the PDF file
-                                with open(pdf_path, "rb") as f:
-                                    pdf_data = f.read()
-                                b64 = base64.b64encode(pdf_data).decode()
-                                href = f'<a href="data:application/octet-stream;base64,{b64}" download="resume_{idx+1}.pdf">Download Resume PDF</a>'
-                                st.markdown(href, unsafe_allow_html=True)
-                                st.success("Resume generated successfully! Download it below.")
-                                logger.info(f"[Info] Resume PDF generated at {pdf_path}")
+                            if 'tex_content' in result:
+                                tex_content = result['tex_content']
+                                tex_filename = f"resume_{idx+1}.tex"
+
+                                # Create a downloadable .tex file
+                                st.download_button(
+                                    label="Download Resume .tex File",
+                                    data=tex_content,
+                                    file_name=tex_filename,
+                                    mime="application/x-tex",
+                                )
+                                st.success("LaTeX resume generated successfully! Download the .tex file below and upload it to Overleaf.")
+                                logger.info(f"[Info] LaTeX resume generated: {tex_filename}")
+
+                                # Button to open Overleaf in a new tab
+                                if st.button(f"Open Overleaf for Resume {idx+1}"):
+                                    webbrowser.open_new_tab("https://www.overleaf.com/")
                             else:
                                 st.error(f"Failed to generate resume: {result.get('error', 'Unknown error')}")
                                 logger.error(f"[Error] Resume generation failed: {result.get('error', 'Unknown error')}")
@@ -231,19 +240,25 @@ if st.session_state['user']:
                                 template_start_path=cover_letter_start_template,
                                 template_end_path=cover_letter_end_template,
                                 assistant_id=st.session_state['latex_cover_letter_assistant_id'],
-                                api_key=st.session_state['api_key']
-                            )
+                                api_key=st.session_state['api_key'])
 
-                            if 'pdf_path' in result:
-                                pdf_path = result['pdf_path']
-                                # Read the PDF file
-                                with open(pdf_path, "rb") as f:
-                                    pdf_data = f.read()
-                                b64 = base64.b64encode(pdf_data).decode()
-                                href = f'<a href="data:application/octet-stream;base64,{b64}" download="cover_letter_{idx+1}.pdf">Download Cover Letter PDF</a>'
-                                st.markdown(href, unsafe_allow_html=True)
-                                st.success("Cover Letter generated successfully! Download it below.")
-                                logger.info(f"[Info] Cover Letter PDF generated at {pdf_path}")
+                            if 'tex_content' in result:
+                                tex_content = result['tex_content']
+                                tex_filename = f"cover_letter_{idx+1}.tex"
+
+                                # Create a downloadable .tex file
+                                st.download_button(
+                                    label="Download Cover Letter .tex File",
+                                    data=tex_content,
+                                    file_name=tex_filename,
+                                    mime="application/x-tex",
+                                )
+                                st.success("LaTeX cover letter generated successfully! Download the .tex file below and upload it to Overleaf.")
+                                logger.info(f"[Info] LaTeX cover letter generated: {tex_filename}")
+
+                                # Button to open Overleaf in a new tab
+                                if st.button(f"Open Overleaf for Cover Letter {idx+1}"):
+                                    webbrowser.open_new_tab("https://www.overleaf.com/")
                             else:
                                 st.error(f"Failed to generate cover letter: {result.get('error', 'Unknown error')}")
                                 logger.error(f"[Error] Cover Letter generation failed: {result.get('error', 'Unknown error')}")
@@ -261,4 +276,4 @@ if st.session_state['user']:
         st.session_state['latex_cover_letter_assistant_id'] = None
         st.success("Logged out successfully!")
         logger.info("[Info] User logged out.")
-        st.experimental_rerun()
+        st.rerun()

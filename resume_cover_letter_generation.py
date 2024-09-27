@@ -1,10 +1,11 @@
 # resume_cover_letter_generation.py
 
 import openai
-import subprocess
 import os
 import logging
 import shutil
+import time  # Added import for time module
+from typing import Dict
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -65,7 +66,7 @@ Do not write ```latex at the start and ``` at the end. Make sure to use only thi
 
 def generate_latex_resume(user_resume: str, job_description: str,
                           template_start_path: str, template_end_path: str,
-                          assistant_id: str, api_key: str) -> dict:
+                          assistant_id: str, api_key: str) -> Dict[str, str]:
     """
     Generate a tailored LaTeX resume based on the user's resume and job description.
 
@@ -78,7 +79,7 @@ def generate_latex_resume(user_resume: str, job_description: str,
         api_key (str): OpenAI API key.
 
     Returns:
-        dict: Contains 'pdf_path' if successful, else 'error'.
+        dict: Contains 'tex_path' and 'tex_content' if successful, else 'error'.
     """
     try:
         client = openai.Client(api_key=api_key)  # Pass api_key to the client
@@ -156,20 +157,14 @@ def generate_latex_resume(user_resume: str, job_description: str,
                             f"[Info] LaTeX resume file saved at {tex_file_path}."
                         )
 
-                        # Compile the .tex file to PDF
-                        pdf_path, compile_success, compile_error = compile_latex(
-                            tex_file_path)
+                        # Read the .tex content to provide for download
+                        with open(tex_file_path, 'r') as f:
+                            tex_content = f.read()
 
-                        if compile_success:
-                            logger.info(
-                                f"[Info] PDF resume generated successfully at {pdf_path}."
-                            )
-                            return {"pdf_path": pdf_path}
-                        else:
-                            logger.error(
-                                f"[Error] LaTeX compilation failed: {compile_error}"
-                            )
-                            return {"error": compile_error}
+                        return {
+                            "tex_path": tex_file_path,
+                            "tex_content": tex_content
+                        }
         else:
             logger.debug(
                 f"[Debug] Run did not complete successfully. Status: {run.status}"
@@ -193,7 +188,7 @@ def generate_latex_resume(user_resume: str, job_description: str,
 def generate_latex_cover_letter(user_resume: str, job_description: str,
                                 template_start_path: str,
                                 template_end_path: str, assistant_id: str,
-                                api_key: str) -> dict:
+                                api_key: str) -> Dict[str, str]:
     """
     Generate a tailored LaTeX cover letter based on the user's resume and job description.
 
@@ -206,7 +201,7 @@ def generate_latex_cover_letter(user_resume: str, job_description: str,
         api_key (str): OpenAI API key.
 
     Returns:
-        dict: Contains 'pdf_path' if successful, else 'error'.
+        dict: Contains 'tex_path' and 'tex_content' if successful, else 'error'.
     """
     try:
         client = openai.Client(api_key=api_key)  # Pass api_key to the client
@@ -285,20 +280,14 @@ def generate_latex_cover_letter(user_resume: str, job_description: str,
                             f"[Info] LaTeX cover letter file saved at {tex_file_path}."
                         )
 
-                        # Compile the .tex file to PDF
-                        pdf_path, compile_success, compile_error = compile_latex(
-                            tex_file_path)
+                        # Read the .tex content to provide for download
+                        with open(tex_file_path, 'r') as f:
+                            tex_content = f.read()
 
-                        if compile_success:
-                            logger.info(
-                                f"[Info] PDF cover letter generated successfully at {pdf_path}."
-                            )
-                            return {"pdf_path": pdf_path}
-                        else:
-                            logger.error(
-                                f"[Error] LaTeX compilation failed: {compile_error}"
-                            )
-                            return {"error": compile_error}
+                        return {
+                            "tex_path": tex_file_path,
+                            "tex_content": tex_content
+                        }
         else:
             logger.debug(
                 f"[Debug] Run did not complete successfully. Status: {run.status}"
@@ -317,86 +306,3 @@ def generate_latex_cover_letter(user_resume: str, job_description: str,
             f"[Exception] An error occurred during cover letter generation: {str(e)}"
         )
         return {"error": str(e)}
-
-
-def compile_latex(tex_file_path: str) -> tuple:
-    """
-    Compile a LaTeX .tex file to PDF using pdflatex.
-
-    Args:
-        tex_file_path (str): Path to the .tex file.
-
-    Returns:
-        tuple: (pdf_file_path, success_flag, error_message)
-    """
-    try:
-        logger.debug(
-            f"[Debug] Starting LaTeX compilation for {tex_file_path}.")
-
-        # Ensure pdflatex is installed
-        pdflatex_path = "pdflatex"
-        if not shutil.which(pdflatex_path):
-            error_msg = "pdflatex command not found. Please ensure LaTeX is installed and pdflatex is in your PATH."
-            logger.error(f"[Error] {error_msg}")
-            return (None, False, error_msg)
-
-        # Compile the LaTeX file
-        compile_command = [
-            pdflatex_path, "-interaction=nonstopmode", tex_file_path
-        ]
-        process = subprocess.run(compile_command,
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE,
-                                 cwd=os.path.dirname(
-                                     os.path.abspath(tex_file_path)))
-
-        # Capture output and errors
-        stdout = process.stdout.decode('utf-8')
-        stderr = process.stderr.decode('utf-8')
-
-        logger.debug(f"[Debug] pdflatex stdout:\n{stdout}")
-        logger.debug(f"[Debug] pdflatex stderr:\n{stderr}")
-
-        if process.returncode != 0:
-            error_msg = f"LaTeX compilation failed with return code {process.returncode}."
-            logger.error(f"[Error] {error_msg}\n{stderr}")
-            return (None, False, error_msg + "\n" + stderr)
-
-        # Check if PDF was created
-        pdf_file_path = tex_file_path.replace(".tex", ".pdf")
-        if os.path.exists(pdf_file_path):
-            logger.debug(
-                f"[Debug] PDF generated successfully at {pdf_file_path}.")
-            # Clean up auxiliary files
-            cleanup_auxiliary_files(tex_file_path)
-            return (pdf_file_path, True, "")
-        else:
-            error_msg = "LaTeX compilation did not produce a PDF."
-            logger.error(f"[Error] {error_msg}")
-            return (None, False, error_msg)
-
-    except Exception as e:
-        error_msg = f"An exception occurred during LaTeX compilation: {str(e)}"
-        logger.exception(f"[Exception] {error_msg}")
-        return (None, False, error_msg)
-
-
-def cleanup_auxiliary_files(tex_file_path: str):
-    """
-    Remove auxiliary files generated by pdflatex.
-
-    Args:
-        tex_file_path (str): Path to the .tex file.
-    """
-    aux_extensions = ['aux', 'log', 'out', 'toc']
-    base_path = tex_file_path.replace('.tex', '')
-    for ext in aux_extensions:
-        aux_file = f"{base_path}.{ext}"
-        if os.path.exists(aux_file):
-            try:
-                os.remove(aux_file)
-                logger.debug(f"[Debug] Removed auxiliary file: {aux_file}")
-            except Exception as e:
-                logger.warning(
-                    f"[Warning] Failed to remove auxiliary file {aux_file}: {str(e)}"
-                )
