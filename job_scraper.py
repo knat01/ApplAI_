@@ -43,8 +43,6 @@ def get_job_link_from_resume(resume_text: str) -> str:
         return None
 
 
-
-
 def scrape_job_listings(job_search_url: str) -> List[Dict]:
     """
     Scrape job listings from the Canada Job Bank using Jina AI's Reader API.

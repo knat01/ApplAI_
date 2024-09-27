@@ -6,6 +6,8 @@ import resume_processing
 import job_scraper
 import resume_cover_letter_generation
 import os
+import urllib.parse
+import base64
 
 # Initialize session state
 if 'user' not in st.session_state:
@@ -16,6 +18,10 @@ if 'resume_text' not in st.session_state:
     st.session_state['resume_text'] = None
 if 'job_listings' not in st.session_state:
     st.session_state['job_listings'] = []
+if 'latex_resume_assistant_id' not in st.session_state:
+    st.session_state['latex_resume_assistant_id'] = None
+if 'latex_cover_letter_assistant_id' not in st.session_state:
+    st.session_state['latex_cover_letter_assistant_id'] = None
 
 st.title("Job Application AI Assistant")
 
@@ -54,12 +60,23 @@ if st.session_state['user']:
         if api_key:
             st.session_state['api_key'] = api_key
             st.success("API Key saved successfully!")
+            # Optionally, create assistants here
+            if not st.session_state.get('latex_resume_assistant_id'):
+                assistant = resume_cover_letter_generation.create_latex_resume_assistant(
+                    api_key)
+                st.session_state['latex_resume_assistant_id'] = assistant.id
+            if not st.session_state.get('latex_cover_letter_assistant_id'):
+                assistant = resume_cover_letter_generation.create_latex_cover_letter_assistant(
+                    api_key)
+                st.session_state[
+                    'latex_cover_letter_assistant_id'] = assistant.id
         else:
             st.error("Please enter a valid OpenAI API Key.")
 
     # Resume Upload
     st.header("Upload Your Resume")
-    uploaded_file = st.file_uploader("Choose your resume file", type=["pdf", "docx", "txt"])
+    uploaded_file = st.file_uploader("Choose your resume file",
+                                     type=["pdf", "docx", "txt"])
     if uploaded_file is not None:
         resume_text = resume_processing.extract_text_from_resume(uploaded_file)
         if resume_text:
@@ -137,25 +154,117 @@ if st.session_state['user']:
                     f"**Description:** {job.get('Full Job Description', 'N/A')[:200]}..."
                 )
                 st.write(f"**Job URL:** [Link]({job.get('Job URL', '#')})")
-                if st.button(
-                        f"Generate Resume and Cover Letter for Job {idx+1}"):
-                    if st.session_state['api_key']:
-                        resume_url, cover_letter_url = resume_cover_letter_generation.generate_resume_and_cover_letter(
-                            st.session_state['resume_text'],
-                            job.get('Full Job Description', ''),
-                            st.session_state['api_key'])
-                        if resume_url and cover_letter_url:
-                            st.download_button("Download Resume",
-                                               resume_url,
-                                               file_name="resume.tex")
-                            st.download_button("Download Cover Letter",
-                                               cover_letter_url,
-                                               file_name="cover_letter.tex")
+
+                # Separate buttons for generating resume and cover letter
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"Generate Resume for Job {idx+1}"):
+                        if st.session_state['api_key']:
+                            latex_end_template = "Your LaTeX resume end template here."
+                            generated_pdf_path = resume_cover_letter_generation.generate_latex_resume(
+                                st.session_state['resume_text'],
+                                job.get('Full Job Description',
+                                        ''), latex_end_template,
+                                st.session_state['latex_resume_assistant_id'],
+                                st.session_state['api_key'])
+                            if generated_pdf_path:
+                                # Display LaTeX Editor with Generated Code
+                                with open(
+                                        generated_pdf_path.replace(
+                                            '.pdf', '.tex'), 'r') as f:
+                                    latex_code = f.read()
+
+                                st.subheader("Edit Your Resume")
+                                # Embed CodeMirror for LaTeX Editing
+                                st.markdown("""
+                                    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
+                                    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+                                    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/stex/stex.min.js"></script>
+                                    """,
+                                            unsafe_allow_html=True)
+
+                                edited_latex = st.text_area("Edit LaTeX Code",
+                                                            value=latex_code,
+                                                            height=400)
+
+                                if st.button(
+                                        f"Compile & Download Resume {idx+1}"):
+                                    # Compile edited LaTeX to PDF
+                                    compiled_pdf_path = resume_cover_letter_generation.compile_latex_to_pdf(
+                                        edited_latex,
+                                        f"Generated_Resume_{idx+1}")
+                                    if compiled_pdf_path:
+                                        with open(compiled_pdf_path,
+                                                  "rb") as pdf_file:
+                                            PDFbyte = pdf_file.read()
+                                        b64 = base64.b64encode(
+                                            PDFbyte).decode()
+                                        href = f'<a href="data:application/octet-stream;base64,{b64}" download="Generated_Resume_{idx+1}.pdf">Download PDF</a>'
+                                        st.markdown(href,
+                                                    unsafe_allow_html=True)
+                                        st.success(
+                                            "PDF compiled and ready for download!"
+                                        )
+                                    else:
+                                        st.error(
+                                            "Failed to compile LaTeX to PDF.")
                         else:
-                            st.error(
-                                "Failed to generate resume and cover letter.")
-                    else:
-                        st.error("Please enter your OpenAI API Key first.")
+                            st.error("Please enter your OpenAI API Key first.")
+                with col2:
+                    if st.button(f"Generate Cover Letter for Job {idx+1}"):
+                        if st.session_state['api_key']:
+                            latex_cover_letter_end_template = "Your LaTeX cover letter end template here."
+                            generated_pdf_path = resume_cover_letter_generation.generate_latex_cover_letter(
+                                st.session_state['resume_text'],
+                                job.get('Full Job Description',
+                                        ''), latex_cover_letter_end_template,
+                                st.session_state[
+                                    'latex_cover_letter_assistant_id'],
+                                st.session_state['api_key'])
+                            if generated_pdf_path:
+                                # Display LaTeX Editor with Generated Code
+                                with open(
+                                        generated_pdf_path.replace(
+                                            '.pdf', '.tex'), 'r') as f:
+                                    latex_code = f.read()
+
+                                st.subheader("Edit Your Cover Letter")
+                                # Embed CodeMirror for LaTeX Editing
+                                st.markdown("""
+                                    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
+                                    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+                                    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/stex/stex.min.js"></script>
+                                    """,
+                                            unsafe_allow_html=True)
+
+                                edited_latex = st.text_area("Edit LaTeX Code",
+                                                            value=latex_code,
+                                                            height=400)
+
+                                if st.button(
+                                        f"Compile & Download Cover Letter {idx+1}"
+                                ):
+                                    # Compile edited LaTeX to PDF
+                                    compiled_pdf_path = resume_cover_letter_generation.compile_latex_to_pdf(
+                                        edited_latex,
+                                        f"Generated_Cover_Letter_{idx+1}")
+                                    if compiled_pdf_path:
+                                        with open(compiled_pdf_path,
+                                                  "rb") as pdf_file:
+                                            PDFbyte = pdf_file.read()
+                                        b64 = base64.b64encode(
+                                            PDFbyte).decode()
+                                        href = f'<a href="data:application/octet-stream;base64,{b64}" download="Generated_Cover_Letter_{idx+1}.pdf">Download PDF</a>'
+                                        st.markdown(href,
+                                                    unsafe_allow_html=True)
+                                        st.success(
+                                            "PDF compiled and ready for download!"
+                                        )
+                                    else:
+                                        st.error(
+                                            "Failed to compile LaTeX to PDF.")
+                        else:
+                            st.error("Please enter your OpenAI API Key first.")
 
     # Logout Button
     if st.button("Logout"):
@@ -163,5 +272,7 @@ if st.session_state['user']:
         st.session_state['api_key'] = None
         st.session_state['resume_text'] = None
         st.session_state['job_listings'] = []
+        st.session_state['latex_resume_assistant_id'] = None
+        st.session_state['latex_cover_letter_assistant_id'] = None
         st.success("Logged out successfully!")
         st.experimental_rerun()
