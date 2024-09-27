@@ -6,12 +6,6 @@ import resume_processing
 import job_scraper
 import resume_cover_letter_generation
 import os
-from flask import Flask, jsonify, request
-from flask_cors import CORS
-
-# Initialize Flask app
-flask_app = Flask(__name__)
-CORS(flask_app)
 
 # Initialize session state
 if 'user' not in st.session_state:
@@ -65,15 +59,15 @@ if st.session_state['user']:
 
     # Resume Upload
     st.header("Upload Your Resume")
-    uploaded_file = st.file_uploader("Choose your resume PDF file",
-                                     type=["pdf"])
+    uploaded_file = st.file_uploader("Choose your resume file", type=["pdf", "docx", "txt"])
     if uploaded_file is not None:
-        resume_text = resume_processing.extract_text_from_pdf(uploaded_file)
+        resume_text = resume_processing.extract_text_from_resume(uploaded_file)
         if resume_text:
             st.session_state['resume_text'] = resume_text
             firebase_auth.save_user_data(st.session_state['user'].uid,
                                          {"resume_text": resume_text})
             st.success("Resume uploaded and processed successfully!")
+            # Retrieve updated user data (without API key)
             user_data = firebase_auth.get_user_data(
                 st.session_state['user'].uid)
             if user_data:
@@ -103,6 +97,7 @@ if st.session_state['user']:
             firebase_auth.save_user_data(st.session_state['user'].uid,
                                          {"preferences": preferences})
             st.success("Job preferences saved successfully!")
+            # Retrieve updated user data
             user_data = firebase_auth.get_user_data(
                 st.session_state['user'].uid)
             if user_data:
@@ -122,7 +117,7 @@ if st.session_state['user']:
         if st.session_state['resume_text'] and st.session_state['api_key']:
             api_key = st.session_state['api_key']
             resume_text = st.session_state['resume_text']
-            job_listings = job_scraper.scrape_jobs(resume_text, api_key)
+            job_listings = job_scraper.scrape_jobs(resume_text)
             st.session_state['job_listings'] = job_listings
             st.success(f"Scraped {len(job_listings)} job listings!")
         else:
@@ -135,19 +130,19 @@ if st.session_state['user']:
         st.header("Job Listings")
         for idx, job in enumerate(st.session_state['job_listings']):
             with st.expander(
-                    f"Job {idx+1}: {job.get('job_title', 'N/A')} at {job.get('company_name', 'N/A')}"
+                    f"Job {idx+1}: {job.get('Job Title', 'N/A')} at {job.get('Company Name', 'N/A')}"
             ):
-                st.write(f"**Location:** {job.get('location', 'N/A')}")
+                st.write(f"**Location:** {job.get('Location', 'N/A')}")
                 st.write(
-                    f"**Description:** {job.get('job_description', 'N/A')[:200]}..."
+                    f"**Description:** {job.get('Full Job Description', 'N/A')[:200]}..."
                 )
-                st.write(f"**Job URL:** [Link]({job.get('job_url', '#')})")
+                st.write(f"**Job URL:** [Link]({job.get('Job URL', '#')})")
                 if st.button(
                         f"Generate Resume and Cover Letter for Job {idx+1}"):
                     if st.session_state['api_key']:
                         resume_url, cover_letter_url = resume_cover_letter_generation.generate_resume_and_cover_letter(
                             st.session_state['resume_text'],
-                            job.get('job_description', ''),
+                            job.get('Full Job Description', ''),
                             st.session_state['api_key'])
                         if resume_url and cover_letter_url:
                             st.download_button("Download Resume",
@@ -170,25 +165,3 @@ if st.session_state['user']:
         st.session_state['job_listings'] = []
         st.success("Logged out successfully!")
         st.experimental_rerun()
-
-# Add a new route for the browser extension to fetch user data
-@flask_app.route('/api/user_data', methods=['GET'])
-def get_user_data():
-    user_id = request.args.get('user_id')
-    if not user_id:
-        return jsonify({"error": "User ID is required"}), 400
-
-    user_data = firebase_auth.get_user_data(user_id)
-    if user_data:
-        # Remove sensitive information before sending
-        user_data.pop('api_key', None)
-        return jsonify(user_data)
-    else:
-        return jsonify({"error": "User not found"}), 404
-
-if __name__ == '__main__':
-    # Run both Streamlit and Flask apps
-    import threading
-    threading.Thread(target=flask_app.run, kwargs={'host': '0.0.0.0', 'port': 5001}).start()
-    import streamlit.web.bootstrap
-    streamlit.web.bootstrap.run(__file__, command_line=None, args=[], flag_options={})
