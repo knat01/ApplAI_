@@ -8,7 +8,6 @@ import streamlit as st
 from typing import List, Dict
 import re
 
-
 def get_job_link_from_resume(resume_text: str) -> str:
     """
     Generate a job search URL based on the user's resume using OpenAI's Chat API.
@@ -23,7 +22,7 @@ def get_job_link_from_resume(resume_text: str) -> str:
     prompt = "You are a link creation bot. ONLY RESPOND WITH LINK. You will be making the link based on the resume that the user provides. Don't say here's the link or anything like that, just the link and only the link should be returned back. ONLY THE LINK NEEDS TO BE RETURNED. You will be responding only with Canada job bank links and nothing else. Here are some example links: This one is for a software developer in Toronto: https://www.jobbank.gc.ca/jobsearch/jobsearch?searchstring=software+developer&locationstring=toronto, This one is for a receptionist located in Alberta: https://www.jobbank.gc.ca/jobsearch/jobsearch?searchstring=receptionist&locationstring=alberta . If the resume is of a certain major like industrial engineering, for example, provide me the link for possible positions that the industrial engineer might work as and not just industrial engineer in the link. Another example is if someone is a full stack developer provide jobs for software developers since it has more results."
 
     try:
-        completion = client.chat.completions.create(model='gpt-3.5-turbo',
+        completion = client.chat.completions.create(model='gpt-4o-mini',
                                                     messages=[{
                                                         "role": "system",
                                                         "content": prompt
@@ -41,9 +40,6 @@ def get_job_link_from_resume(resume_text: str) -> str:
     except Exception as e:
         print(f"Error generating job search URL: {e}")
         return None
-
-
-
 
 def scrape_job_listings(job_search_url: str) -> List[Dict]:
     """
@@ -71,9 +67,10 @@ def scrape_job_listings(job_search_url: str) -> List[Dict]:
         - Location
         - Full Job Description (Extract the complete job description)
         - Posting Date (if available)
+        - Application URL (direct link to apply, if available)
         Return the results in a JSON format with a list of job postings."""
 
-        completion = client.chat.completions.create(model='gpt-3.5-turbo',
+        completion = client.chat.completions.create(model='gpt-4o-mini',
                                                     messages=[{
                                                         "role": "system",
                                                         "content": prompt
@@ -109,7 +106,6 @@ def scrape_job_listings(job_search_url: str) -> List[Dict]:
         print(f"Error scraping job listings: {e}")
 
     return []
-
 
 def scrape_jobs(resume_text: str) -> List[Dict]:
     """
