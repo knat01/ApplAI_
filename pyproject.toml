@@ -11,6 +11,8 @@ openai = "^1.50.1"
 trafilatura = "^1.12.2"
 streamlit = "^1.38.0"
 firebase-admin = "^6.5.0"
+pypdf2 = "^3.0.1"
+scrapegraphai = "^1.25.0"
 
 
 [build-system]
