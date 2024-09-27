@@ -26,7 +26,7 @@ Note: The extension uses a simplified form-filling logic and may not work perfec
 The Streamlit app allows you to:
 
 1. Log in or create an account
-2. Upload your resume (Supported formats: PDF, Word Document, Plain Text)
+2. Upload your resume
 3. Enter job preferences
 4. Scrape job listings
 5. Generate tailored resumes and cover letters
@@ -36,14 +36,5 @@ To run the Streamlit app:
 1. Ensure all required dependencies are installed.
 2. Run `python main.py` in your terminal.
 3. Open your browser and navigate to `http://localhost:5000`.
-
-## Supported Resume Formats
-
-The application now supports the following resume formats:
-- PDF (.pdf)
-- Microsoft Word Document (.docx)
-- Plain Text (.txt)
-
-When uploading your resume, make sure to use one of these supported file formats for the best results.
 
 Remember to keep your personal information and API keys secure.

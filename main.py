@@ -65,9 +65,10 @@ if st.session_state['user']:
 
     # Resume Upload
     st.header("Upload Your Resume")
-    uploaded_file = st.file_uploader("Choose your resume file", type=["pdf", "docx", "txt"])
+    uploaded_file = st.file_uploader("Choose your resume PDF file",
+                                     type=["pdf"])
     if uploaded_file is not None:
-        resume_text = resume_processing.extract_resume_text(uploaded_file)
+        resume_text = resume_processing.extract_text_from_pdf(uploaded_file)
         if resume_text:
             st.session_state['resume_text'] = resume_text
             firebase_auth.save_user_data(st.session_state['user'].uid,
