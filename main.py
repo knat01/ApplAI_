@@ -156,7 +156,7 @@ if st.session_state['user']:
                 st.write(f"**Job URL:** [Link]({job.get('Job URL', '#')})")
 
                 # Separate buttons for generating resume and cover letter
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
                     if st.button(f"Generate Resume for Job {idx+1}"):
                         if st.session_state['api_key']:
@@ -265,6 +265,22 @@ if st.session_state['user']:
                                             "Failed to compile LaTeX to PDF.")
                         else:
                             st.error("Please enter your OpenAI API Key first.")
+                
+                with col3:
+                    if st.button(f"Apply to Job {idx+1}"):
+                        user_data = firebase_auth.get_user_data(st.session_state['user'].uid)
+                        if user_data:
+                            application_result = job_scraper.submit_job_application(
+                                job.get('Job URL', ''), user_data
+                            )
+                            if application_result['status'] == 'manual':
+                                st.write(application_result['message'])
+                                for instruction in application_result['instructions']:
+                                    st.write(instruction)
+                            else:
+                                st.success(application_result['message'])
+                        else:
+                            st.error("Failed to retrieve user data for job application.")
 
     # Logout Button
     if st.button("Logout"):
