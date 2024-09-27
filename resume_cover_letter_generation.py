@@ -3,7 +3,6 @@
 import openai
 import os
 import logging
-import shutil
 import time  # Added import for time module
 from typing import Dict
 
@@ -22,19 +21,19 @@ def create_latex_resume_assistant(api_key: str):
     Returns:
         assistant: The created assistant object.
     """
-    client = openai.Client(api_key=api_key)  # Pass api_key to the client
-    assistant = client.beta.assistants.create(
-        model="gpt-4-1106-preview",
-        name="LaTeX Resume Content Integrator",
-        instructions=
-        """Integrate the user's resume details into the 'latex_resume_end_template', adhering strictly to its structure and format.
+    openai.api_key = api_key  # Set the OpenAI API key
+    assistant = openai.Assistant.create(model="gpt-4",
+                                        name="LaTeX Resume Content Integrator",
+                                        instructions="""
+Integrate the user's resume details into the 'latex_resume_end_template', adhering strictly to its structure and format.
 Start from \\begin{document}, and ensure the content aligns with the provided LaTeX commands and sections.
 Focus on the Experience, Education, Projects, and Technical Skills sections, using the user's resume information.
 Avoid any unicode characters and extra LaTeX commands not present in the template.
 If specific data (like project dates) are absent in the user's resume, omit those elements from the template. Highlight in bold any resume content that matches key terms in the job description,
 particularly in the Experience and Projects sections. Tailor the resume to emphasize aspects relevant to the job description, without adding information not present in the user's resume.
-The output should form a one-page, fully formatted LaTeX document, ready to merge into a complete resume. Also, don't write ```latex at the start and ``` at the end. Make sure to use only this apostrophe ' and only this dash - not any other ones.""",
-        tools=[])
+The output should form a one-page, fully formatted LaTeX document, ready to merge into a complete resume. Also, don't write ```latex at the start and ``` at the end. Make sure to use only this apostrophe ' and only this dash - not any other ones.
+""",
+                                        tools=[])
     return assistant
 
 
@@ -48,18 +47,19 @@ def create_latex_cover_letter_assistant(api_key: str):
     Returns:
         assistant: The created assistant object.
     """
-    client = openai.Client(api_key=api_key)  # Pass api_key to the client
-    assistant = client.beta.assistants.create(
-        model="gpt-4-1106-preview",
+    openai.api_key = api_key  # Set the OpenAI API key
+    assistant = openai.Assistant.create(
+        model="gpt-4",
         name="LaTeX Cover Letter Content Integrator",
-        instructions=
-        """Integrate the user's resume details and job description into the 'latex_cover_letter_end_template', adhering strictly to its structure and format.
+        instructions="""
+Integrate the user's resume details and job description into the 'latex_cover_letter_end_template', adhering strictly to its structure and format.
 Start from \\begin{document}, and ensure the content aligns with the provided LaTeX commands and sections.
 Focus on creating a compelling introduction, highlighting relevant skills and experiences, and expressing enthusiasm for the position and company.
 Avoid any unicode characters and extra LaTeX commands not present in the template.
 If specific data is absent in the user's resume or job description, gracefully handle the omission. 
 The output should form a one-page, fully formatted LaTeX document, ready to merge into a complete cover letter. 
-Do not write ```latex at the start and ``` at the end. Make sure to use only this apostrophe ' and only this dash - not any other ones.""",
+Do not write ```latex at the start and ``` at the end. Make sure to use only this apostrophe ' and only this dash - not any other ones.
+""",
         tools=[])
     return assistant
 
@@ -82,9 +82,9 @@ def generate_latex_resume(user_resume: str, job_description: str,
         dict: Contains 'tex_path' and 'tex_content' if successful, else 'error'.
     """
     try:
-        client = openai.Client(api_key=api_key)  # Pass api_key to the client
+        openai.api_key = api_key  # Set the OpenAI API key
         logger.debug("[Debug] Creating a thread for resume generation...")
-        thread = client.beta.threads.create()
+        thread = openai.Thread.create()
         thread_id = thread.id
         logger.debug(f"[Debug] Thread created with ID: {thread_id}")
 
@@ -99,26 +99,25 @@ def generate_latex_resume(user_resume: str, job_description: str,
         for message in messages:
             logger.debug(
                 f"[Debug] Adding message with role '{message['role']}'")
-            client.beta.threads.messages.create(thread_id=thread_id,
-                                                role=message["role"],
-                                                content=message["content"])
+            openai.ThreadMessage.create(thread_id=thread_id,
+                                        role=message["role"],
+                                        content=message["content"])
 
         logger.debug(
             "[Debug] Running the assistant with the created thread...")
-        run = client.beta.threads.runs.create(thread_id=thread_id,
-                                              assistant_id=assistant_id)
+        run = openai.ThreadRun.create(thread_id=thread_id,
+                                      assistant_id=assistant_id)
 
         while run.status in ['queued', 'in_progress']:
             logger.debug(
                 f"[Debug] Waiting for run to complete... Status: {run.status}")
             time.sleep(1)
-            run = client.beta.threads.runs.retrieve(thread_id=thread_id,
-                                                    run_id=run.id)
+            run = openai.ThreadRun.retrieve(thread_id=thread_id, run_id=run.id)
 
         logger.debug(f"[Debug] Run status after completion: {run.status}")
         if run.status == 'completed':
             logger.debug("[Debug] Run completed. Fetching messages...")
-            messages = client.beta.threads.messages.list(thread_id=thread_id)
+            messages = openai.ThreadMessage.list(thread_id=thread_id)
 
             for message in messages.data:
                 logger.debug(f"[Debug] Message role: {message.role}")
@@ -126,17 +125,8 @@ def generate_latex_resume(user_resume: str, job_description: str,
                     logger.debug(
                         "[Debug] Assistant message found. Checking for LaTeX content..."
                     )
-                    response_text = ""
-                    if isinstance(message.content, list):
-                        for part in message.content:
-                            if hasattr(part, 'text') and hasattr(
-                                    part.text, 'value'):
-                                response_text += part.text.value
-                    elif hasattr(message.content, 'text') and hasattr(
-                            message.content.text, 'value'):
-                        response_text = message.content.text.value
+                    response_text = message.content.strip()
 
-                    response_text = response_text.strip()
                     logger.debug(
                         f"[Debug] Assistant LaTeX response:\n{response_text}")
 
@@ -150,7 +140,7 @@ def generate_latex_resume(user_resume: str, job_description: str,
                             full_latex += f.read()
 
                         # Save the combined LaTeX to a .tex file
-                        tex_file_path = "generated_resume.tex"
+                        tex_file_path = f"generated_resume.tex"
                         with open(tex_file_path, 'w') as f:
                             f.write(full_latex)
                         logger.info(
@@ -204,10 +194,10 @@ def generate_latex_cover_letter(user_resume: str, job_description: str,
         dict: Contains 'tex_path' and 'tex_content' if successful, else 'error'.
     """
     try:
-        client = openai.Client(api_key=api_key)  # Pass api_key to the client
+        openai.api_key = api_key  # Set the OpenAI API key
         logger.debug(
             "[Debug] Creating a thread for cover letter generation...")
-        thread = client.beta.threads.create()
+        thread = openai.Thread.create()
         thread_id = thread.id
         logger.debug(f"[Debug] Thread created with ID: {thread_id}")
 
@@ -222,26 +212,25 @@ def generate_latex_cover_letter(user_resume: str, job_description: str,
         for message in messages:
             logger.debug(
                 f"[Debug] Adding message with role '{message['role']}'")
-            client.beta.threads.messages.create(thread_id=thread_id,
-                                                role=message["role"],
-                                                content=message["content"])
+            openai.ThreadMessage.create(thread_id=thread_id,
+                                        role=message["role"],
+                                        content=message["content"])
 
         logger.debug(
             "[Debug] Running the assistant with the created thread...")
-        run = client.beta.threads.runs.create(thread_id=thread_id,
-                                              assistant_id=assistant_id)
+        run = openai.ThreadRun.create(thread_id=thread_id,
+                                      assistant_id=assistant_id)
 
         while run.status in ['queued', 'in_progress']:
             logger.debug(
                 f"[Debug] Waiting for run to complete... Status: {run.status}")
             time.sleep(1)
-            run = client.beta.threads.runs.retrieve(thread_id=thread_id,
-                                                    run_id=run.id)
+            run = openai.ThreadRun.retrieve(thread_id=thread_id, run_id=run.id)
 
         logger.debug(f"[Debug] Run status after completion: {run.status}")
         if run.status == 'completed':
             logger.debug("[Debug] Run completed. Fetching messages...")
-            messages = client.beta.threads.messages.list(thread_id=thread_id)
+            messages = openai.ThreadMessage.list(thread_id=thread_id)
 
             for message in messages.data:
                 logger.debug(f"[Debug] Message role: {message.role}")
@@ -249,17 +238,8 @@ def generate_latex_cover_letter(user_resume: str, job_description: str,
                     logger.debug(
                         "[Debug] Assistant message found. Checking for LaTeX content..."
                     )
-                    response_text = ""
-                    if isinstance(message.content, list):
-                        for part in message.content:
-                            if hasattr(part, 'text') and hasattr(
-                                    part.text, 'value'):
-                                response_text += part.text.value
-                    elif hasattr(message.content, 'text') and hasattr(
-                            message.content.text, 'value'):
-                        response_text = message.content.text.value
+                    response_text = message.content.strip()
 
-                    response_text = response_text.strip()
                     logger.debug(
                         f"[Debug] Assistant LaTeX response:\n{response_text}")
 
@@ -273,7 +253,7 @@ def generate_latex_cover_letter(user_resume: str, job_description: str,
                             full_latex += f.read()
 
                         # Save the combined LaTeX to a .tex file
-                        tex_file_path = "generated_cover_letter.tex"
+                        tex_file_path = f"generated_cover_letter.tex"
                         with open(tex_file_path, 'w') as f:
                             f.write(full_latex)
                         logger.info(

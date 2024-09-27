@@ -6,10 +6,7 @@ import resume_processing
 import job_scraper
 import resume_cover_letter_generation
 import os
-import urllib.parse
-import base64
 import logging
-import webbrowser
 from io import BytesIO
 import zipfile
 
@@ -26,10 +23,6 @@ if 'resume_text' not in st.session_state:
     st.session_state['resume_text'] = None
 if 'job_listings' not in st.session_state:
     st.session_state['job_listings'] = []
-if 'latex_resume_assistant_id' not in st.session_state:
-    st.session_state['latex_resume_assistant_id'] = None
-if 'latex_cover_letter_assistant_id' not in st.session_state:
-    st.session_state['latex_cover_letter_assistant_id'] = None
 
 st.title("Job Application AI Assistant")
 
@@ -66,22 +59,33 @@ if st.session_state['user']:
 
     # OpenAI API Key Input
     st.header("OpenAI API Key")
-    api_key = st.text_input("Enter your OpenAI API Key", type="password")
+    api_key_input = st.text_input("Enter your OpenAI API Key", type="password")
     if st.button("Save API Key"):
-        if api_key:
-            st.session_state['api_key'] = api_key
+        if api_key_input:
+            st.session_state['api_key'] = api_key_input
             st.success("API Key saved successfully!")
             logger.info("[Info] OpenAI API Key saved.")
 
-            # Create assistants
-            if not st.session_state.get('latex_resume_assistant_id'):
-                assistant = resume_cover_letter_generation.create_latex_resume_assistant(api_key)
-                st.session_state['latex_resume_assistant_id'] = assistant.id
-                logger.info(f"[Info] LaTeX Resume Assistant created with ID: {assistant.id}")
-            if not st.session_state.get('latex_cover_letter_assistant_id'):
-                assistant = resume_cover_letter_generation.create_latex_cover_letter_assistant(api_key)
-                st.session_state['latex_cover_letter_assistant_id'] = assistant.id
-                logger.info(f"[Info] LaTeX Cover Letter Assistant created with ID: {assistant.id}")
+            # Initialize LaTeX Assistants
+            resume_template_start = "templates/latex_resume_format_start.tex"
+            resume_template_end = "templates/latex_resume_format_end.tex"
+            cover_letter_template_start = "templates/latex_cover_letter_format_start.tex"
+            cover_letter_template_end = "templates/latex_cover_letter_format_end.tex"
+
+            # Check if templates exist
+            missing_templates = []
+            for path in [
+                resume_template_start, resume_template_end,
+                cover_letter_template_start, cover_letter_template_end
+            ]:
+                if not os.path.exists(path):
+                    missing_templates.append(path)
+            if missing_templates:
+                st.error(f"Missing template files: {', '.join(missing_templates)}")
+                logger.error(f"[Error] Missing template files: {', '.join(missing_templates)}")
+            else:
+                # Assistants are now handled within the generation functions using ChatCompletion
+                st.success("All templates are in place.")
         else:
             st.error("Please enter a valid OpenAI API Key.")
             logger.warning("[Warning] Empty OpenAI API Key provided.")
@@ -148,7 +152,8 @@ if st.session_state['user']:
         if st.session_state['resume_text'] and st.session_state['api_key']:
             api_key = st.session_state['api_key']
             resume_text = st.session_state['resume_text']
-            job_listings = job_scraper.scrape_jobs(resume_text)
+            with st.spinner('Scraping job listings...'):
+                job_listings = job_scraper.scrape_jobs(resume_text)
             st.session_state['job_listings'] = job_listings
             st.success(f"Scraped {len(job_listings)} job listings!")
             logger.info(f"[Info] Scraped {len(job_listings)} job listings.")
@@ -165,14 +170,14 @@ if st.session_state['user']:
                 st.write(f"**Description:** {job.get('Full Job Description', 'N/A')[:200]}...")
                 st.write(f"**Job URL:** [Link]({job.get('Job URL', '#')})")
 
-                # Separate buttons for generating resume and cover letter
+                # Separate columns for generating resume and cover letter
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button(f"Generate Resume for Job {idx+1}"):
                         if st.session_state['api_key']:
-                            # Updated paths to LaTeX templates
-                            resume_start_template = os.path.join("templates", "latex_resume_format_start.tex")
-                            resume_end_template = os.path.join("templates", "latex_resume_format_end.tex")
+                            # Paths to LaTeX templates
+                            resume_start_template = "templates/latex_resume_format_start.tex"
+                            resume_end_template = "templates/latex_resume_format_end.tex"
 
                             # Check if template files exist
                             if not os.path.exists(resume_start_template):
@@ -184,14 +189,15 @@ if st.session_state['user']:
                                 logger.error(f"[Error] Resume end template not found at {resume_end_template}.")
                                 continue
 
-                            # Generate LaTeX resume
-                            result = resume_cover_letter_generation.generate_latex_resume(
-                                user_resume=st.session_state['resume_text'],
-                                job_description=job.get('Full Job Description', ''),
-                                template_start_path=resume_start_template,
-                                template_end_path=resume_end_template,
-                                assistant_id=st.session_state['latex_resume_assistant_id'],
-                                api_key=st.session_state['api_key'])
+                            with st.spinner('Generating LaTeX resume...'):
+                                # Generate LaTeX resume
+                                result = resume_cover_letter_generation.generate_latex_resume(
+                                    user_resume=st.session_state['resume_text'],
+                                    job_description=job.get('Full Job Description', ''),
+                                    template_start_path=resume_start_template,
+                                    template_end_path=resume_end_template,
+                                    api_key=st.session_state['api_key']
+                                )
 
                             if 'tex_content' in result:
                                 tex_content = result['tex_content']
@@ -207,9 +213,9 @@ if st.session_state['user']:
                                 st.success("LaTeX resume generated successfully! Download the .tex file below and upload it to Overleaf.")
                                 logger.info(f"[Info] LaTeX resume generated: {tex_filename}")
 
-                                # Button to open Overleaf in a new tab
-                                if st.button(f"Open Overleaf for Resume {idx+1}"):
-                                    webbrowser.open_new_tab("https://www.overleaf.com/")
+                                # Provide a link to open Overleaf in a new tab
+                                overleaf_url = "https://www.overleaf.com/"
+                                st.markdown(f"[**Open Overleaf**]({overleaf_url}) to compile your resume.")
                             else:
                                 st.error(f"Failed to generate resume: {result.get('error', 'Unknown error')}")
                                 logger.error(f"[Error] Resume generation failed: {result.get('error', 'Unknown error')}")
@@ -219,9 +225,9 @@ if st.session_state['user']:
                 with col2:
                     if st.button(f"Generate Cover Letter for Job {idx+1}"):
                         if st.session_state['api_key']:
-                            # Updated paths to LaTeX templates
-                            cover_letter_start_template = os.path.join("templates", "latex_cover_letter_format_start.tex")
-                            cover_letter_end_template = os.path.join("templates", "latex_cover_letter_format_end.tex")
+                            # Paths to LaTeX templates
+                            cover_letter_start_template = "templates/latex_cover_letter_format_start.tex"
+                            cover_letter_end_template = "templates/latex_cover_letter_format_end.tex"
 
                             # Check if template files exist
                             if not os.path.exists(cover_letter_start_template):
@@ -233,14 +239,15 @@ if st.session_state['user']:
                                 logger.error(f"[Error] Cover letter end template not found at {cover_letter_end_template}.")
                                 continue
 
-                            # Generate LaTeX cover letter
-                            result = resume_cover_letter_generation.generate_latex_cover_letter(
-                                user_resume=st.session_state['resume_text'],
-                                job_description=job.get('Full Job Description', ''),
-                                template_start_path=cover_letter_start_template,
-                                template_end_path=cover_letter_end_template,
-                                assistant_id=st.session_state['latex_cover_letter_assistant_id'],
-                                api_key=st.session_state['api_key'])
+                            with st.spinner('Generating LaTeX cover letter...'):
+                                # Generate LaTeX cover letter
+                                result = resume_cover_letter_generation.generate_latex_cover_letter(
+                                    user_resume=st.session_state['resume_text'],
+                                    job_description=job.get('Full Job Description', ''),
+                                    template_start_path=cover_letter_start_template,
+                                    template_end_path=cover_letter_end_template,
+                                    api_key=st.session_state['api_key']
+                                )
 
                             if 'tex_content' in result:
                                 tex_content = result['tex_content']
@@ -256,9 +263,9 @@ if st.session_state['user']:
                                 st.success("LaTeX cover letter generated successfully! Download the .tex file below and upload it to Overleaf.")
                                 logger.info(f"[Info] LaTeX cover letter generated: {tex_filename}")
 
-                                # Button to open Overleaf in a new tab
-                                if st.button(f"Open Overleaf for Cover Letter {idx+1}"):
-                                    webbrowser.open_new_tab("https://www.overleaf.com/")
+                                # Provide a link to open Overleaf in a new tab
+                                overleaf_url = "https://www.overleaf.com/"
+                                st.markdown(f"[**Open Overleaf**]({overleaf_url}) to compile your cover letter.")
                             else:
                                 st.error(f"Failed to generate cover letter: {result.get('error', 'Unknown error')}")
                                 logger.error(f"[Error] Cover Letter generation failed: {result.get('error', 'Unknown error')}")
@@ -272,8 +279,28 @@ if st.session_state['user']:
         st.session_state['api_key'] = None
         st.session_state['resume_text'] = None
         st.session_state['job_listings'] = []
-        st.session_state['latex_resume_assistant_id'] = None
-        st.session_state['latex_cover_letter_assistant_id'] = None
         st.success("Logged out successfully!")
         logger.info("[Info] User logged out.")
-        st.rerun()
+        st.experimental_rerun()
+
+    # Optional: Allow downloading all generated documents as a ZIP
+    if st.session_state['job_listings']:
+        st.header("Download All Generated Documents")
+        if st.button("Download All as ZIP"):
+            zip_buffer = BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+                generated_folder = "generated_documents"
+                for root, dirs, files in os.walk(generated_folder):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, generated_folder)
+                        zip_file.write(file_path, arcname=arcname)
+            zip_buffer.seek(0)
+            st.download_button(
+                label="Download All Documents ZIP",
+                data=zip_buffer,
+                file_name="job_application_documents.zip",
+                mime="application/zip",
+            )
+            st.success("ZIP file created successfully!")
+            logger.info("[Info] ZIP file of generated documents created.")
