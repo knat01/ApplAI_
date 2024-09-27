@@ -1,12 +1,14 @@
 # resume_cover_letter_generation.py
 
 import openai
-import base64
-import urllib.parse
-import time
-import streamlit as st
 import subprocess
 import os
+import logging
+import shutil
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 def create_latex_resume_assistant(api_key: str):
@@ -24,13 +26,13 @@ def create_latex_resume_assistant(api_key: str):
         model="gpt-4-1106-preview",
         name="LaTeX Resume Content Integrator",
         instructions=
-        """Integrate the user's resume details into the 'latex_end_template', adhering strictly to its structure and format.
+        """Integrate the user's resume details into the 'latex_resume_end_template', adhering strictly to its structure and format.
 Start from \\begin{document}, and ensure the content aligns with the provided LaTeX commands and sections.
 Focus on the Experience, Education, Projects, and Technical Skills sections, using the user's resume information.
 Avoid any unicode characters and extra LaTeX commands not present in the template.
 If specific data (like project dates) are absent in the user's resume, omit those elements from the template. Highlight in bold any resume content that matches key terms in the job description,
 particularly in the Experience and Projects sections. Tailor the resume to emphasize aspects relevant to the job description, without adding information not present in the user's resume.
-The output should form a one-page, fully formatted LaTeX document, ready to merge into a complete resume. also dont write ```latex at the start and ``` at the end. Make sure to use only this apostrophe ' and only this dash - not any other ones.""",
+The output should form a one-page, fully formatted LaTeX document, ready to merge into a complete resume. Also, don't write ```latex at the start and ``` at the end. Make sure to use only this apostrophe ' and only this dash - not any other ones.""",
         tools=[])
     return assistant
 
@@ -62,322 +64,339 @@ Do not write ```latex at the start and ``` at the end. Make sure to use only thi
 
 
 def generate_latex_resume(user_resume: str, job_description: str,
-                          latex_end_template: str, assistant_id: str,
-                          api_key: str) -> str:
+                          template_start_path: str, template_end_path: str,
+                          assistant_id: str, api_key: str) -> dict:
     """
     Generate a tailored LaTeX resume based on the user's resume and job description.
 
     Args:
         user_resume (str): The user's resume text.
         job_description (str): The job description text.
-        latex_end_template (str): The ending part of the LaTeX resume template.
+        template_start_path (str): Path to the LaTeX resume start template.
+        template_end_path (str): Path to the LaTeX resume end template.
         assistant_id (str): The ID of the created assistant.
         api_key (str): OpenAI API key.
 
     Returns:
-        str: The generated LaTeX resume as a data URL or Overleaf project URL.
+        dict: Contains 'pdf_path' if successful, else 'error'.
     """
-    client = openai.Client(api_key=api_key)  # Pass api_key to the client
-    print("[Debug] Creating a thread for conversation...")
-    thread = client.beta.threads.create()
-    thread_id = thread.id
-    print(f"[Debug] Thread created with ID: {thread_id}")
+    try:
+        client = openai.Client(api_key=api_key)  # Pass api_key to the client
+        logger.debug("[Debug] Creating a thread for resume generation...")
+        thread = client.beta.threads.create()
+        thread_id = thread.id
+        logger.debug(f"[Debug] Thread created with ID: {thread_id}")
 
-    print("[Debug] Adding messages to the thread...")
-    messages = [{
-        "role": "user",
-        "content": user_resume
-    }, {
-        "role": "user",
-        "content": job_description
-    }, {
-        "role": "user",
-        "content": latex_end_template
-    }]
-    for message in messages:
-        print(f"[Debug] Adding message with role '{message['role']}'")
-        client.beta.threads.messages.create(thread_id=thread_id,
-                                            role=message["role"],
-                                            content=message["content"])
+        logger.debug("[Debug] Adding messages to the thread...")
+        messages = [{
+            "role": "user",
+            "content": user_resume
+        }, {
+            "role": "user",
+            "content": job_description
+        }]
+        for message in messages:
+            logger.debug(
+                f"[Debug] Adding message with role '{message['role']}'")
+            client.beta.threads.messages.create(thread_id=thread_id,
+                                                role=message["role"],
+                                                content=message["content"])
 
-    print("[Debug] Running the assistant with the created thread...")
-    run = client.beta.threads.runs.create(thread_id=thread_id,
-                                          assistant_id=assistant_id)
+        logger.debug(
+            "[Debug] Running the assistant with the created thread...")
+        run = client.beta.threads.runs.create(thread_id=thread_id,
+                                              assistant_id=assistant_id)
 
-    while run.status in ['queued', 'in_progress']:
-        print(f"[Debug] Waiting for run to complete... Status: {run.status}")
-        time.sleep(1)
-        run = client.beta.threads.runs.retrieve(thread_id=thread_id,
-                                                run_id=run.id)
+        while run.status in ['queued', 'in_progress']:
+            logger.debug(
+                f"[Debug] Waiting for run to complete... Status: {run.status}")
+            time.sleep(1)
+            run = client.beta.threads.runs.retrieve(thread_id=thread_id,
+                                                    run_id=run.id)
 
-    print(f"[Debug] Run status after completion: {run.status}")
-    if run.status == 'completed':
-        print("[Debug] Run completed. Fetching messages...")
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        logger.debug(f"[Debug] Run status after completion: {run.status}")
+        if run.status == 'completed':
+            logger.debug("[Debug] Run completed. Fetching messages...")
+            messages = client.beta.threads.messages.list(thread_id=thread_id)
 
-        # Log all the messages to inspect what's being returned
-        for message in messages.data:
-            print(f"[Debug] Message role: {message.role}")
-            print(f"[Debug] Message content: {message.content}")
-            if message.role == "assistant":
-                print(
-                    "[Debug] Assistant message found. Checking for LaTeX content..."
-                )
-
-                # Iterate through the list of content parts
-                if isinstance(message.content, list):
-                    for part in message.content:
-                        if hasattr(part, 'text'):
-                            text_obj = part.text
-                            if hasattr(text_obj, 'value'):
-                                response_text = text_obj.value
-                                print(
-                                    f"[Debug] Assistant LaTeX response: {response_text}"
-                                )
-                                if response_text.strip():
-                                    # Compile LaTeX to PDF and get download link
-                                    pdf_path = compile_latex_to_pdf(
-                                        response_text, "Generated Resume")
-                                    if pdf_path:
-                                        return pdf_path
-                                    else:
-                                        # Fallback to data URL if compilation fails
-                                        return combine_and_save_latex_resume(
-                                            latex_end_template, response_text)
-                elif hasattr(message.content, 'text'):
-                    text_obj = message.content.text
-                    if hasattr(text_obj, 'value'):
-                        response_text = text_obj.value
-                        print(
-                            f"[Debug] Assistant LaTeX response: {response_text}"
-                        )
-                        if response_text.strip():
-                            pdf_path = compile_latex_to_pdf(
-                                response_text, "Generated Resume")
-                            if pdf_path:
-                                return pdf_path
-                            else:
-                                return combine_and_save_latex_resume(
-                                    latex_end_template, response_text)
-                else:
-                    print(
-                        "[Debug] No valid LaTeX content found in assistant message."
+            for message in messages.data:
+                logger.debug(f"[Debug] Message role: {message.role}")
+                if message.role == "assistant":
+                    logger.debug(
+                        "[Debug] Assistant message found. Checking for LaTeX content..."
                     )
-    else:
-        print(
-            f"[Debug] Run did not complete successfully. Status: {run.status}")
+                    response_text = ""
+                    if isinstance(message.content, list):
+                        for part in message.content:
+                            if hasattr(part, 'text') and hasattr(
+                                    part.text, 'value'):
+                                response_text += part.text.value
+                    elif hasattr(message.content, 'text') and hasattr(
+                            message.content.text, 'value'):
+                        response_text = message.content.text.value
 
-    print(
-        "[Debug] No valid LaTeX content found or run did not complete successfully."
-    )
-    return None
+                    response_text = response_text.strip()
+                    logger.debug(
+                        f"[Debug] Assistant LaTeX response:\n{response_text}")
+
+                    if response_text:
+                        # Combine templates with generated content
+                        full_latex = ""
+                        with open(template_start_path, 'r') as f:
+                            full_latex += f.read() + "\n"
+                        full_latex += response_text + "\n"
+                        with open(template_end_path, 'r') as f:
+                            full_latex += f.read()
+
+                        # Save the combined LaTeX to a .tex file
+                        tex_file_path = "generated_resume.tex"
+                        with open(tex_file_path, 'w') as f:
+                            f.write(full_latex)
+                        logger.info(
+                            f"[Info] LaTeX resume file saved at {tex_file_path}."
+                        )
+
+                        # Compile the .tex file to PDF
+                        pdf_path, compile_success, compile_error = compile_latex(
+                            tex_file_path)
+
+                        if compile_success:
+                            logger.info(
+                                f"[Info] PDF resume generated successfully at {pdf_path}."
+                            )
+                            return {"pdf_path": pdf_path}
+                        else:
+                            logger.error(
+                                f"[Error] LaTeX compilation failed: {compile_error}"
+                            )
+                            return {"error": compile_error}
+        else:
+            logger.debug(
+                f"[Debug] Run did not complete successfully. Status: {run.status}"
+            )
+
+        logger.debug(
+            "[Debug] No valid LaTeX content found or run did not complete successfully."
+        )
+        return {
+            "error":
+            "No LaTeX content generated or run did not complete successfully."
+        }
+
+    except Exception as e:
+        logger.exception(
+            f"[Exception] An error occurred during resume generation: {str(e)}"
+        )
+        return {"error": str(e)}
 
 
 def generate_latex_cover_letter(user_resume: str, job_description: str,
-                                latex_cover_letter_end_template: str,
-                                assistant_id: str, api_key: str) -> str:
+                                template_start_path: str,
+                                template_end_path: str, assistant_id: str,
+                                api_key: str) -> dict:
     """
     Generate a tailored LaTeX cover letter based on the user's resume and job description.
 
     Args:
         user_resume (str): The user's resume text.
         job_description (str): The job description text.
-        latex_cover_letter_end_template (str): The ending part of the LaTeX cover letter template.
+        template_start_path (str): Path to the LaTeX cover letter start template.
+        template_end_path (str): Path to the LaTeX cover letter end template.
         assistant_id (str): The ID of the created assistant.
         api_key (str): OpenAI API key.
 
     Returns:
-        str: The generated LaTeX cover letter as a data URL or Overleaf project URL.
-    """
-    client = openai.Client(api_key=api_key)  # Pass api_key to the client
-    print("[Debug] Creating a thread for conversation (cover letter)...")
-    thread = client.beta.threads.create()
-    thread_id = thread.id
-    print(f"[Debug] Thread created with ID: {thread_id}")
-
-    print("[Debug] Adding messages to the thread (cover letter)...")
-    messages = [{
-        "role": "user",
-        "content": user_resume
-    }, {
-        "role": "user",
-        "content": job_description
-    }, {
-        "role": "user",
-        "content": latex_cover_letter_end_template
-    }]
-    for message in messages:
-        print(f"[Debug] Adding message with role '{message['role']}'")
-        client.beta.threads.messages.create(thread_id=thread_id,
-                                            role=message["role"],
-                                            content=message["content"])
-
-    print(
-        "[Debug] Running the assistant with the created thread (cover letter)..."
-    )
-    run = client.beta.threads.runs.create(thread_id=thread_id,
-                                          assistant_id=assistant_id)
-
-    while run.status in ['queued', 'in_progress']:
-        print(f"[Debug] Waiting for run to complete... Status: {run.status}")
-        time.sleep(1)
-        run = client.beta.threads.runs.retrieve(thread_id=thread_id,
-                                                run_id=run.id)
-
-    print(f"[Debug] Run status after completion: {run.status}")
-    if run.status == 'completed':
-        print("[Debug] Run completed. Fetching messages...")
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
-
-        # Log all the messages to inspect what's being returned
-        for message in messages.data:
-            print(f"[Debug] Message role: {message.role}")
-            print(f"[Debug] Message content: {message.content}")
-            if message.role == "assistant":
-                print(
-                    "[Debug] Assistant message found. Checking for LaTeX content..."
-                )
-
-                # Iterate through the list of content parts
-                if isinstance(message.content, list):
-                    for part in message.content:
-                        if hasattr(part, 'text'):
-                            text_obj = part.text
-                            if hasattr(text_obj, 'value'):
-                                response_text = text_obj.value
-                                print(
-                                    f"[Debug] Assistant LaTeX response: {response_text}"
-                                )
-                                if response_text.strip():
-                                    # Compile LaTeX to PDF and get download link
-                                    pdf_path = compile_latex_to_pdf(
-                                        response_text,
-                                        "Generated Cover Letter")
-                                    if pdf_path:
-                                        return pdf_path
-                                    else:
-                                        # Fallback to data URL if compilation fails
-                                        return combine_and_save_latex_cover_letter(
-                                            latex_cover_letter_end_template,
-                                            response_text)
-                elif hasattr(message.content, 'text'):
-                    text_obj = message.content.text
-                    if hasattr(text_obj, 'value'):
-                        response_text = text_obj.value
-                        print(
-                            f"[Debug] Assistant LaTeX response: {response_text}"
-                        )
-                        if response_text.strip():
-                            pdf_path = compile_latex_to_pdf(
-                                response_text, "Generated Cover Letter")
-                            if pdf_path:
-                                return pdf_path
-                            else:
-                                return combine_and_save_latex_cover_letter(
-                                    latex_cover_letter_end_template,
-                                    response_text)
-                else:
-                    print(
-                        "[Debug] No valid LaTeX content found in assistant message."
-                    )
-    else:
-        print(
-            f"[Debug] Run did not complete successfully. Status: {run.status}")
-
-    print(
-        "[Debug] No valid LaTeX content found or run did not complete successfully."
-    )
-    return None
-
-
-def combine_and_save_latex_resume(start_content: str,
-                                  generated_content: str) -> str:
-    """
-    Combine the start and generated LaTeX content for the resume and encode it.
-
-    Args:
-        start_content (str): The starting LaTeX template content.
-        generated_content (str): The generated LaTeX content from OpenAI.
-
-    Returns:
-        str: The combined LaTeX content as a data URL.
-    """
-    combined_content = start_content + '\n' + generated_content
-
-    # Save to a .tex file
-    resume_tex_path = "generated_resume.tex"
-    with open(resume_tex_path, 'w') as f:
-        f.write(combined_content)
-
-    # Compile LaTeX to PDF
-    pdf_path = compile_latex_to_pdf(combined_content, "Generated Resume")
-
-    return pdf_path  # Return the PDF path
-
-
-def combine_and_save_latex_cover_letter(start_content: str,
-                                        generated_content: str) -> str:
-    """
-    Combine the start and generated LaTeX content for the cover letter and encode it.
-
-    Args:
-        start_content (str): The starting LaTeX template content.
-        generated_content (str): The generated LaTeX content from OpenAI.
-
-    Returns:
-        str: The combined LaTeX content as a data URL.
-    """
-    combined_content = start_content + '\n' + generated_content
-
-    # Save to a .tex file
-    cover_letter_tex_path = "generated_cover_letter.tex"
-    with open(cover_letter_tex_path, 'w') as f:
-        f.write(combined_content)
-
-    # Compile LaTeX to PDF
-    pdf_path = compile_latex_to_pdf(combined_content, "Generated Cover Letter")
-
-    return pdf_path  # Return the PDF path
-
-
-def compile_latex_to_pdf(latex_content: str, document_name: str) -> str:
-    """
-    Compile LaTeX content to PDF.
-
-    Args:
-        latex_content (str): The LaTeX content to compile.
-        document_name (str): The name of the document (used for the PDF file).
-
-    Returns:
-        str: The path to the compiled PDF file or None if compilation fails.
+        dict: Contains 'pdf_path' if successful, else 'error'.
     """
     try:
-        # Save LaTeX content to a temporary .tex file
-        tex_file = f"{document_name}.tex"
-        with open(tex_file, 'w') as f:
-            f.write(latex_content)
+        client = openai.Client(api_key=api_key)  # Pass api_key to the client
+        logger.debug(
+            "[Debug] Creating a thread for cover letter generation...")
+        thread = client.beta.threads.create()
+        thread_id = thread.id
+        logger.debug(f"[Debug] Thread created with ID: {thread_id}")
 
-        # Compile the .tex file to PDF using pdflatex
-        compile_command = ["pdflatex", "-interaction=nonstopmode", tex_file]
-        subprocess.run(compile_command,
-                       check=True,
-                       stdout=subprocess.PIPE,
-                       stderr=subprocess.PIPE)
+        logger.debug("[Debug] Adding messages to the thread...")
+        messages = [{
+            "role": "user",
+            "content": user_resume
+        }, {
+            "role": "user",
+            "content": job_description
+        }]
+        for message in messages:
+            logger.debug(
+                f"[Debug] Adding message with role '{message['role']}'")
+            client.beta.threads.messages.create(thread_id=thread_id,
+                                                role=message["role"],
+                                                content=message["content"])
+
+        logger.debug(
+            "[Debug] Running the assistant with the created thread...")
+        run = client.beta.threads.runs.create(thread_id=thread_id,
+                                              assistant_id=assistant_id)
+
+        while run.status in ['queued', 'in_progress']:
+            logger.debug(
+                f"[Debug] Waiting for run to complete... Status: {run.status}")
+            time.sleep(1)
+            run = client.beta.threads.runs.retrieve(thread_id=thread_id,
+                                                    run_id=run.id)
+
+        logger.debug(f"[Debug] Run status after completion: {run.status}")
+        if run.status == 'completed':
+            logger.debug("[Debug] Run completed. Fetching messages...")
+            messages = client.beta.threads.messages.list(thread_id=thread_id)
+
+            for message in messages.data:
+                logger.debug(f"[Debug] Message role: {message.role}")
+                if message.role == "assistant":
+                    logger.debug(
+                        "[Debug] Assistant message found. Checking for LaTeX content..."
+                    )
+                    response_text = ""
+                    if isinstance(message.content, list):
+                        for part in message.content:
+                            if hasattr(part, 'text') and hasattr(
+                                    part.text, 'value'):
+                                response_text += part.text.value
+                    elif hasattr(message.content, 'text') and hasattr(
+                            message.content.text, 'value'):
+                        response_text = message.content.text.value
+
+                    response_text = response_text.strip()
+                    logger.debug(
+                        f"[Debug] Assistant LaTeX response:\n{response_text}")
+
+                    if response_text:
+                        # Combine templates with generated content
+                        full_latex = ""
+                        with open(template_start_path, 'r') as f:
+                            full_latex += f.read() + "\n"
+                        full_latex += response_text + "\n"
+                        with open(template_end_path, 'r') as f:
+                            full_latex += f.read()
+
+                        # Save the combined LaTeX to a .tex file
+                        tex_file_path = "generated_cover_letter.tex"
+                        with open(tex_file_path, 'w') as f:
+                            f.write(full_latex)
+                        logger.info(
+                            f"[Info] LaTeX cover letter file saved at {tex_file_path}."
+                        )
+
+                        # Compile the .tex file to PDF
+                        pdf_path, compile_success, compile_error = compile_latex(
+                            tex_file_path)
+
+                        if compile_success:
+                            logger.info(
+                                f"[Info] PDF cover letter generated successfully at {pdf_path}."
+                            )
+                            return {"pdf_path": pdf_path}
+                        else:
+                            logger.error(
+                                f"[Error] LaTeX compilation failed: {compile_error}"
+                            )
+                            return {"error": compile_error}
+        else:
+            logger.debug(
+                f"[Debug] Run did not complete successfully. Status: {run.status}"
+            )
+
+        logger.debug(
+            "[Debug] No valid LaTeX content found or run did not complete successfully."
+        )
+        return {
+            "error":
+            "No LaTeX content generated or run did not complete successfully."
+        }
+
+    except Exception as e:
+        logger.exception(
+            f"[Exception] An error occurred during cover letter generation: {str(e)}"
+        )
+        return {"error": str(e)}
+
+
+def compile_latex(tex_file_path: str) -> tuple:
+    """
+    Compile a LaTeX .tex file to PDF using pdflatex.
+
+    Args:
+        tex_file_path (str): Path to the .tex file.
+
+    Returns:
+        tuple: (pdf_file_path, success_flag, error_message)
+    """
+    try:
+        logger.debug(
+            f"[Debug] Starting LaTeX compilation for {tex_file_path}.")
+
+        # Ensure pdflatex is installed
+        pdflatex_path = "pdflatex"
+        if not shutil.which(pdflatex_path):
+            error_msg = "pdflatex command not found. Please ensure LaTeX is installed and pdflatex is in your PATH."
+            logger.error(f"[Error] {error_msg}")
+            return (None, False, error_msg)
+
+        # Compile the LaTeX file
+        compile_command = [
+            pdflatex_path, "-interaction=nonstopmode", tex_file_path
+        ]
+        process = subprocess.run(compile_command,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE,
+                                 cwd=os.path.dirname(
+                                     os.path.abspath(tex_file_path)))
+
+        # Capture output and errors
+        stdout = process.stdout.decode('utf-8')
+        stderr = process.stderr.decode('utf-8')
+
+        logger.debug(f"[Debug] pdflatex stdout:\n{stdout}")
+        logger.debug(f"[Debug] pdflatex stderr:\n{stderr}")
+
+        if process.returncode != 0:
+            error_msg = f"LaTeX compilation failed with return code {process.returncode}."
+            logger.error(f"[Error] {error_msg}\n{stderr}")
+            return (None, False, error_msg + "\n" + stderr)
 
         # Check if PDF was created
-        pdf_file = f"{document_name}.pdf"
-        if os.path.exists(pdf_file):
-            print(f"[Debug] PDF compiled successfully: {pdf_file}")
-            return pdf_file
+        pdf_file_path = tex_file_path.replace(".tex", ".pdf")
+        if os.path.exists(pdf_file_path):
+            logger.debug(
+                f"[Debug] PDF generated successfully at {pdf_file_path}.")
+            # Clean up auxiliary files
+            cleanup_auxiliary_files(tex_file_path)
+            return (pdf_file_path, True, "")
         else:
-            print(f"[Error] PDF compilation failed for {tex_file}")
-            return None
-    except subprocess.CalledProcessError as e:
-        print(f"[Error] LaTeX compilation error: {e.stderr.decode()}")
-        return None
-    finally:
-        # Clean up auxiliary files generated by pdflatex
-        for ext in ['aux', 'log', 'out']:
-            aux_file = f"{document_name}.{ext}"
-            if os.path.exists(aux_file):
+            error_msg = "LaTeX compilation did not produce a PDF."
+            logger.error(f"[Error] {error_msg}")
+            return (None, False, error_msg)
+
+    except Exception as e:
+        error_msg = f"An exception occurred during LaTeX compilation: {str(e)}"
+        logger.exception(f"[Exception] {error_msg}")
+        return (None, False, error_msg)
+
+
+def cleanup_auxiliary_files(tex_file_path: str):
+    """
+    Remove auxiliary files generated by pdflatex.
+
+    Args:
+        tex_file_path (str): Path to the .tex file.
+    """
+    aux_extensions = ['aux', 'log', 'out', 'toc']
+    base_path = tex_file_path.replace('.tex', '')
+    for ext in aux_extensions:
+        aux_file = f"{base_path}.{ext}"
+        if os.path.exists(aux_file):
+            try:
                 os.remove(aux_file)
+                logger.debug(f"[Debug] Removed auxiliary file: {aux_file}")
+            except Exception as e:
+                logger.warning(
+                    f"[Warning] Failed to remove auxiliary file {aux_file}: {str(e)}"
+                )
