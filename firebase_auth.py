@@ -1,39 +1,51 @@
-# firebase_auth.py
-
 import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import firestore, auth
+from firebase_admin import credentials, auth, firestore
 import os
 
 # Initialize Firebase app
-def initialize_firebase():
-    if not firebase_admin._apps:
-        # Replace 'path/to/serviceAccountKey.json' with your Firebase service account key path
-        cred = credentials.Certificate('path/to/serviceAccountKey.json')
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-    return db
+cred = credentials.Certificate({
+    "type": "service_account",
+    "project_id": os.environ.get("FIREBASE_PROJECT_ID"),
+    "private_key_id": os.environ.get("FIREBASE_PRIVATE_KEY_ID"),
+    "private_key": os.environ.get("FIREBASE_PRIVATE_KEY").replace("\\n", "\n"),
+    "client_email": os.environ.get("FIREBASE_CLIENT_EMAIL"),
+    "client_id": os.environ.get("FIREBASE_CLIENT_ID"),
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_x509_cert_url": os.environ.get("FIREBASE_CLIENT_CERT_URL")
+})
 
-# Save user data to Firestore
-def save_user_data(user_id, data):
-    db = initialize_firebase()
-    db.collection('users').document(user_id).set(data)
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
-# Get user data from Firestore
-def get_user_data(user_id):
-    db = initialize_firebase()
-    doc = db.collection('users').document(user_id).get()
-    if doc.exists:
-        return doc.to_dict()
-    else:
+def create_user(email, password):
+    try:
+        user = auth.create_user(email=email, password=password)
+        return user
+    except Exception as e:
+        print(f"Error creating user: {e}")
         return None
 
-# Save resume to Firebase Storage (optional)
-def save_resume_to_storage(user_id, resume_file):
-    # Implement saving resume to Firebase Storage if needed
-    pass
+def login_user(email, password):
+    try:
+        user = auth.get_user_by_email(email)
+        # In a real-world scenario, you'd verify the password here
+        return user
+    except Exception as e:
+        print(f"Error logging in user: {e}")
+        return None
 
-# Get resume from Firebase Storage (optional)
-def get_resume_from_storage(user_id):
-    # Implement retrieving resume from Firebase Storage if needed
-    pass
+def save_user_data(user_id, data):
+    try:
+        db.collection('users').document(user_id).set(data, merge=True)
+    except Exception as e:
+        print(f"Error saving user data: {e}")
+
+def get_user_data(user_id):
+    try:
+        doc = db.collection('users').document(user_id).get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        print(f"Error getting user data: {e}")
+        return None
