@@ -125,7 +125,7 @@ if st.session_state['user']:
                 "Please upload your resume and enter your OpenAI API Key first."
             )
 
-    # Display Job Listings, Generate Resume/Cover Letter, and Submit Application
+    # Display Job Listings and Generate Resume/Cover Letter
     if st.session_state['job_listings']:
         st.header("Job Listings")
         for idx, job in enumerate(st.session_state['job_listings']):
@@ -137,44 +137,25 @@ if st.session_state['user']:
                     f"**Description:** {job.get('Full Job Description', 'N/A')[:200]}..."
                 )
                 st.write(f"**Job URL:** [Link]({job.get('Job URL', '#')})")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    if st.button(f"Generate Resume and Cover Letter for Job {idx+1}"):
-                        if st.session_state['api_key']:
-                            resume_url, cover_letter_url = resume_cover_letter_generation.generate_resume_and_cover_letter(
-                                st.session_state['resume_text'],
-                                job.get('Full Job Description', ''),
-                                st.session_state['api_key'])
-                            if resume_url and cover_letter_url:
-                                st.download_button("Download Resume",
-                                                    resume_url,
-                                                    file_name="resume.tex")
-                                st.download_button("Download Cover Letter",
-                                                    cover_letter_url,
-                                                    file_name="cover_letter.tex")
-                            else:
-                                st.error(
-                                    "Failed to generate resume and cover letter.")
+                if st.button(
+                        f"Generate Resume and Cover Letter for Job {idx+1}"):
+                    if st.session_state['api_key']:
+                        resume_url, cover_letter_url = resume_cover_letter_generation.generate_resume_and_cover_letter(
+                            st.session_state['resume_text'],
+                            job.get('Full Job Description', ''),
+                            st.session_state['api_key'])
+                        if resume_url and cover_letter_url:
+                            st.download_button("Download Resume",
+                                               resume_url,
+                                               file_name="resume.tex")
+                            st.download_button("Download Cover Letter",
+                                               cover_letter_url,
+                                               file_name="cover_letter.tex")
                         else:
-                            st.error("Please enter your OpenAI API Key first.")
-                with col2:
-                    if st.button(f"Submit Application for Job {idx+1}"):
-                        user_data = firebase_auth.get_user_data(st.session_state['user'].uid)
-                        if user_data:
-                            application_result = job_scraper.submit_job_application(
-                                job.get('Job URL', ''),
-                                {
-                                    "resume": st.session_state['resume_text'],
-                                    "preferences": user_data.get('preferences', {}),
-                                    "email": st.session_state['user'].email
-                                }
-                            )
-                            if application_result:
-                                st.success(f"Application submitted successfully for Job {idx+1}!")
-                            else:
-                                st.error(f"Failed to submit application for Job {idx+1}.")
-                        else:
-                            st.error("Failed to retrieve user data for application submission.")
+                            st.error(
+                                "Failed to generate resume and cover letter.")
+                    else:
+                        st.error("Please enter your OpenAI API Key first.")
 
     # Logout Button
     if st.button("Logout"):
