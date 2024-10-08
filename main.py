@@ -11,14 +11,22 @@ from io import BytesIO
 import zipfile
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Suppress excessive watchdog logs
+logging.getLogger("watchdog.observers.inotify_buffer").setLevel(
+    logging.WARNING)
 
 # Initialize session state
 if 'user' not in st.session_state:
     st.session_state['user'] = None
 if 'api_key' not in st.session_state:
     st.session_state['api_key'] = None
+if 'google_api_key' not in st.session_state:
+    st.session_state['google_api_key'] = None
+if 'google_cx' not in st.session_state:
+    st.session_state['google_cx'] = None
 if 'resume_text' not in st.session_state:
     st.session_state['resume_text'] = None
 if 'job_listings' not in st.session_state:
@@ -27,6 +35,10 @@ if 'resume_assistant_id' not in st.session_state:
     st.session_state['resume_assistant_id'] = None
 if 'cover_letter_assistant_id' not in st.session_state:
     st.session_state['cover_letter_assistant_id'] = None
+if 'scrape_method' not in st.session_state:
+    st.session_state['scrape_method'] = "Canada Job Bank Scrape"
+if 'job_preferences' not in st.session_state:
+    st.session_state['job_preferences'] = {}
 
 st.title("Job Application AI Assistant")
 
@@ -65,10 +77,10 @@ if st.session_state['user']:
     # OpenAI API Key Input
     st.header("OpenAI API Key")
     api_key_input = st.text_input("Enter your OpenAI API Key", type="password")
-    if st.button("Save API Key"):
+    if st.button("Save OpenAI API Key"):
         if api_key_input:
             st.session_state['api_key'] = api_key_input
-            st.success("API Key saved successfully!")
+            st.success("OpenAI API Key saved successfully!")
             logger.info("[Info] OpenAI API Key saved.")
 
             # Initialize LaTeX Templates
@@ -127,6 +139,54 @@ if st.session_state['user']:
         else:
             st.error("Please enter a valid OpenAI API Key.")
             logger.warning("[Warning] Empty OpenAI API Key provided.")
+
+    # Google Custom Search API Key Input
+    st.header("Google Custom Search API")
+    google_api_key_input = st.text_input(
+        "Enter your Google Custom Search API Key", type="password")
+    google_cx_input = st.text_input(
+        "Enter your Google Custom Search Engine ID (CX)")
+    col3, col4 = st.columns(2)
+    with col3:
+        if st.button("Save Google Custom Search API Key"):
+            if google_api_key_input and google_cx_input:
+                st.session_state['google_api_key'] = google_api_key_input
+                st.session_state['google_cx'] = google_cx_input
+                st.success(
+                    "Google Custom Search API Key and CX ID saved successfully!"
+                )
+                logger.info(
+                    "[Info] Google Custom Search API Key and CX ID saved.")
+            else:
+                st.error("Please enter both Google API Key and CX ID.")
+                logger.warning(
+                    "[Warning] Incomplete Google API credentials provided.")
+    with col4:
+        if st.button("Test Google Custom Search API"):
+            if st.session_state['google_api_key'] and st.session_state[
+                    'google_cx']:
+                with st.spinner('Testing Google Custom Search API...'):
+                    is_valid, message = job_scraper.test_google_custom_search_api(
+                        api_key=st.session_state['google_api_key'],
+                        cx=st.session_state['google_cx'])
+                if is_valid:
+                    st.success(
+                        "Google Custom Search API Key and CX ID are valid!")
+                    logger.info(
+                        "[Info] Google Custom Search API credentials are valid."
+                    )
+                else:
+                    st.error(
+                        f"Google Custom Search API test failed: {message}")
+                    logger.error(
+                        f"[Error] Google Custom Search API test failed: {message}"
+                    )
+            else:
+                st.error(
+                    "Please enter and save your Google API Key and CX ID first."
+                )
+                logger.warning(
+                    "[Warning] Google API test attempted without credentials.")
 
     # Resume Upload
     st.header("Upload Your Resume")
@@ -199,17 +259,56 @@ if st.session_state['user']:
             logger.warning(
                 "[Warning] Incomplete job preference fields provided.")
 
+    # Select Job Scraping Method
+    st.header("Select Job Scraping Method")
+    scrape_method = st.selectbox(
+        "Choose a job scraping method:",
+        ["Canada Job Bank Scrape", "Google Search Scrape"])
+    st.session_state['scrape_method'] = scrape_method
+    logger.info(f"[Info] User selected scraping method: {scrape_method}")
+
     # Job Scraping
     st.header("Job Scraping")
     if st.button("Scrape Job Listings"):
         if st.session_state['resume_text'] and st.session_state['api_key']:
             api_key = st.session_state['api_key']
             resume_text = st.session_state['resume_text']
-            with st.spinner('Scraping job listings...'):
-                job_listings = job_scraper.scrape_jobs(resume_text)
-            st.session_state['job_listings'] = job_listings
-            st.success(f"Scraped {len(job_listings)} job listings!")
-            logger.info(f"[Info] Scraped {len(job_listings)} job listings.")
+            if st.session_state['scrape_method'] == "Canada Job Bank Scrape":
+                with st.spinner(
+                        'Scraping job listings from Canada Job Bank...'):
+                    job_listings = job_scraper.scrape_jobs(resume_text)
+                st.session_state['job_listings'] = job_listings
+                st.success(
+                    f"Scraped {len(job_listings)} job listings from Canada Job Bank!"
+                )
+                logger.info(
+                    f"[Info] Scraped {len(job_listings)} job listings from Canada Job Bank."
+                )
+            elif st.session_state['scrape_method'] == "Google Search Scrape":
+                if st.session_state['google_api_key'] and st.session_state[
+                        'google_cx']:
+                    with st.spinner(
+                            'Scraping job listings using Google Search...'):
+                        job_listings = job_scraper.google_search_scrape(
+                            resume_text=resume_text,
+                            location=st.session_state['job_preferences'].get(
+                                'location', ''),
+                            api_key=st.session_state['api_key'],
+                            google_api_key=st.session_state['google_api_key'],
+                            google_cx=st.session_state['google_cx'])
+                    st.session_state['job_listings'] = job_listings
+                    st.success(
+                        f"Scraped {len(job_listings)} job listings using Google Search!"
+                    )
+                    logger.info(
+                        f"[Info] Scraped {len(job_listings)} job listings using Google Search."
+                    )
+                else:
+                    st.error(
+                        "Please enter your Google API Key and CX ID first.")
+                    logger.warning(
+                        "[Warning] Google Search attempted without API credentials."
+                    )
         else:
             st.error(
                 "Please upload your resume and enter your OpenAI API Key first."
@@ -222,15 +321,17 @@ if st.session_state['user']:
         st.header("Job Listings")
         for idx, job in enumerate(st.session_state['job_listings']):
             with st.expander(
-                    f"Job {idx+1}: {job.get('Job Title', 'N/A')} at {job.get('Company Name', 'N/A')}"
+                    f"Job {idx+1}: {job.get('job_title', 'N/A')} at {job.get('company_name', 'N/A')}"
             ):
-                st.write(f"**Location:** {job.get('Location', 'N/A')}")
-                st.write(
-                    f"**Description:** {job.get('Full Job Description', 'N/A')[:200]}..."
-                )
-                st.write(f"**Job URL:** [Link]({job.get('Job URL', '#')})")
+                # Enhanced formatting and display
+                st.markdown(f"**🗺️ Location:** {job.get('location', 'N/A')}")
+                st.markdown(f"**📝 Job Description:**")
+                st.write(job.get('full_job_description', 'N/A'))
+                st.markdown(f"**🔗 [Job URL]({job.get('job_url', '#')})**")
 
-                # Separate columns for generating resume and cover letter
+                # Separate sections for generating resume and cover letter
+                st.markdown("---")
+                st.markdown("### Generate Documents:")
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button(f"Generate Resume for Job {idx+1}",
@@ -274,7 +375,7 @@ if st.session_state['user']:
                                     user_resume=st.
                                     session_state['resume_text'],
                                     job_description=job.get(
-                                        'Full Job Description', ''),
+                                        'full_job_description', ''),
                                     template_start_path=resume_start_template,
                                     template_end_path=resume_end_template,
                                     assistant_id=st.
@@ -360,7 +461,7 @@ if st.session_state['user']:
                                     user_resume=st.
                                     session_state['resume_text'],
                                     job_description=job.get(
-                                        'Full Job Description', ''),
+                                        'full_job_description', ''),
                                     template_start_path=
                                     cover_letter_start_template,
                                     template_end_path=cover_letter_end_template,
@@ -407,6 +508,8 @@ if st.session_state['user']:
     if st.button("Logout"):
         st.session_state['user'] = None
         st.session_state['api_key'] = None
+        st.session_state['google_api_key'] = None
+        st.session_state['google_cx'] = None
         st.session_state['resume_text'] = None
         st.session_state['job_listings'] = []
         st.session_state['resume_assistant_id'] = None

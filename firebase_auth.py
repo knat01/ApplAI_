@@ -57,7 +57,7 @@ def create_user(email, password):
         print(f"User created successfully: {user.uid}")
         return user
     except Exception as e:
-        print(f"Error creating user: {e}")
+        #print(f"Error creating user: {e}")
         return None
 
 
@@ -70,7 +70,7 @@ def login_user(email, password):
         print(f"User fetched successfully: {user.uid}")
         return user
     except Exception as e:
-        print(f"Error logging in user: {e}")
+        #print(f"Error logging in user: {e}")
         return None
 
 
@@ -80,7 +80,7 @@ def save_user_data(user_id, data):
         return
     try:
         db.collection('users').document(user_id).set(data, merge=True)
-        print(f"User data saved for user_id: {user_id}. Data: {data}")
+        #print(f"User data saved for user_id: {user_id}. Data: {data}")
     except Exception as e:
         print(f"Error saving user data: {e}")
 
@@ -93,11 +93,11 @@ def get_user_data(user_id):
         doc = db.collection('users').document(user_id).get()
         if doc.exists:
             data = doc.to_dict()
-            print(f"User data retrieved for user_id: {user_id}. Data: {data}")
+            #print(f"User data retrieved for user_id: {user_id}. Data: {data}")
             return data
         else:
-            print(f"No user data found for user_id: {user_id}.")
+            #print(f"No user data found for user_id: {user_id}.")
             return None
     except Exception as e:
-        print(f"Error getting user data: {e}")
+        #print(f"Error getting user data: {e}")
         return None
